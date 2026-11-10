@@ -1,0 +1,529 @@
+********************************************************************************
+* Regressions Appliances 
+********************************************************************************
+
+clear all
+set more off
+
+import delimited "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\sample_12012023.csv"
+
+* Rename
+rename total_savings savings
+
+* Drop missing
+drop if saidi == .
+drop if saifi == .
+*replace saifi = saifi/365 (already did it on data cleaning)
+
+* Set panel structure
+xtset district hhid
+
+********************************************************************************
+***Table 5: First-Stage Intrumental Variables
+********************************************************************************
+
+* Saifi - first stage
+xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe vce(cluster district)
+estimates store IV_saifi
+predict e_saifi, e
+
+* Export
+outreg2 [IV_saifi] using first_stage, tex replace label dec(3) addtext(District FE, Yes)
+
+* For the Cragg-Donald Wald-F statistic and J-statistic see regression xtivreg2
+
+save data_appliances, replace
+
+**************************************************************************************************Table 6: Reliability Quantity of Appliances
+***********************************************************************************************
+
+********* Conditional Poission No Controls (Mod 1)
+xtpoisson appliances saifi, fe vce(robust)
+estimates store mod1
+
+xtpoisson appliances saifi, fe vce(robust) irr
+estimates store mod1_irr
+
+********* Conditional Poission Income Controls (Mod 2)
+xtpoisson appliances saifi log_exp savings business high_skill job_instability, fe vce(robust) 
+estimates store mod2
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability, fe vce(robust) irr
+estimates store mod2_irr
+
+********* Conditional Poission Demographics Controls (Mod 3)
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior, fe vce(robust)
+estimates store mod3
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior, fe vce(robust) irr
+estimates store mod3_irr
+
+********* Conditional Poission Head of Households Controls (Mod 4)
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth, fe vce(robust)
+estimates store mod4
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth, fe vce(robust) irr
+estimates store mod4_irr
+
+********* Conditional Poission Dwelling Controls (Mod 5)
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling, fe vce(robust)
+estimates store mod5
+
+xtpoisson appliances saidi saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling, fe vce(robust) irr
+estimates store mod5_irr
+
+********* Conditional Poission Location Controls (Mod 6)
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe vce(robust)
+estimates store mod6
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe vce(robust) irr
+estimates store mod6_irr
+
+********** Export Output Conditional Poission Models
+outreg2 [mod1 mod2 mod3 mod4 mod5 mod6] using count_all, tex replace label dec(3) addstat("Wald", e(chi2), "Group Average", e(g_avg), "Converged", e(converged)) addnote(Note: Standard errors in parenthesis. These are clustered at the district level. Total number of appliances include radios, phones, TV, decoder, satellite dishes, cookers, fridges, dvds, music systems, computers and printers, cameras, hotplates, electric fans, laundry machines, water filters and sewing machines.) addtext(District FE, Yes)
+
+outreg2 [mod1_irr mod2_irr mod3_irr mod4_irr mod5_irr mod6_irr] using count_all_irr, tex replace label dec(3) addstat("Wald", e(chi2), "Group Average", e(g_avg), "Converged", e(converged)) addnote(Note: Standard errors in parenthesis. These are clustered at the district level. Total number of appliances include radios, phones, TV, decoder, satellite dishes, cookers, fridges, dvds, music systems, computers and printers, cameras, hotplates, electric fans, laundry machines, water filters and sewing machines.) addtext(District FE, Yes)
+
+*** IV Conditional Fixed-Effects Poisson (full model)
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe vce(robust)	
+estimates store IV1
+
+xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe vce(robust) irr	
+estimates store IV2
+
+* Bootstrapped Standard  Errors 
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi= poisson_boot[_n,1]
+sum b_saifi
+hist b_saifi
+
+use data_appliances, clear
+
+*** IV Conditional Negative Binomial
+
+xtnbreg appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe noconst vce(bootstrap)
+estimates store mod8_any
+
+xtnbreg appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe noconst vce(bootstrap) irr
+estimates store mod8_any_irr
+
+* Bootstrapped Standard  Errors
+
+mat ngb_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+xtnbreg appliances saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi, fe
+mat ngb_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi2= ngb_boot[_n,1]
+sum b_saifi2
+hist b_saifi2
+
+use data_appliances, clear
+
+************************************************************************************************** Figure 9 and 10: Appliance Ownership
+***********************************************************************************************
+
+* Any Appliance
+xtivreg2 appliances_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Any_Appliance
+
+* Any Communication
+xtivreg2 cat_1_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Any_Communication
+
+* Any Entertainment
+xtivreg2 cat_2_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Any_Entertainment
+
+* Any Productivity
+xtivreg2 cat_3_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Any_Productivity
+
+* Any Convenience
+xtivreg2 cat_4_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Any_Convenience
+
+*** Radio
+xtivreg2 radio_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Radio
+
+*** Analogue Phone
+xtivreg2 analogue_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Analogue_Phone
+
+*** Smart/Feature Phone
+xtivreg2 smart_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Smart_Phone
+
+*** TV
+xtivreg2 tv_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store TV
+
+*** DVD
+xtivreg2 dvd_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store DVD
+
+*** Decoder
+xtivreg2 decoder_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Decoder
+
+*** Satellite Dish
+xtivreg2 satellite_dish_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Satellite_Dish
+
+*** Music
+xtivreg2 music_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Music
+
+*** Camera
+xtivreg2 camera_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Camera
+
+*** Compute
+xtivreg2 computer_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Computer
+
+* Printer
+xtivreg2 printer_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Printer
+
+* Sewing Machine
+xtivreg2 sewing_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Sewing
+
+* Hotplate
+xtivreg2 hotplate_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Hotplate
+
+* Cooker
+xtivreg2 cooker_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Cooker
+
+* Fridge
+xtivreg2 fridge_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Fridge
+
+* Laundry Machine
+xtivreg2 laundry_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Laundry
+
+* Filter
+xtivreg2 filter_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Filter
+
+* Fan 
+xtivreg2 fan_y (saifi = lightning_radiance lightning_number) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Fan
+
+*** Plots
+
+coefplot (Any_Communication, label("Any")) Radio (Analogue_Phone, label("Feature Phone")) (Smart_Phone, label("Smart Phone")), vert keep(saifi) yline(0) ylabel(-0.125(0.025)0.125, format(%9.3f)) yscale(range(-0.125(0.025)0.125)) legend(rows(1) pos(6)) xlabel(none) ytitle("Estimated Coefficient")
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\cat1_regression.png", as(png) name("Graph") replace
+
+coefplot (Any_Entertainment, label("Any")) TV Decoder DVD (Satellite_Dish, label("Satellite Dish")) Camera Music, vert keep(saifi) yline(0) ylabel(-0.125(0.025)0.125, format(%9.3f)) yscale(range(-0.125(0.025)0.125)) legend(rows(1) pos(6)) xlabel(none) ytitle("Estimated Coefficient")
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\cat2_regression.png", as(png) name("Graph") replace
+
+coefplot (Any_Productivity, label("Any")) Computer Printer Sewing, vert keep(saifi) yline(0) ylabel(-0.125(0.025)0.125, format(%9.3f)) yscale(range(-0.125(0.025)0.125)) legend(rows(1) pos(6)) xlabel(none) ytitle("Estimated Coefficient")
+
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\cat3_regression.png", as(png) name("Graph") replace
+
+coefplot (Any_Convenience, label("Any")) Hotplate Cooker Laundry Filter Fan Fridge, vert keep(saifi) yline(0) ylabel(-0.125(0.025)0.125, format(%9.3f)) yscale(range(-0.125(0.025)0.125)) legend(rows(1) pos(6)) xlabel(none) ytitle("Estimated Coefficient")
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\cat4_regression.png", as(png) name("Graph") replace
+
+coefplot Any_Communication, bylabel("Any Communication")  || Any_Entertainment, bylabel("Any Entertainment")  || Any_Productivity, bylabel("Any Productivity")  || Any_Convenience, bylabel("Any Convenience") || , keep(log_exp hh_female hh_ed hh_youth children female owner rural log_trade) xline(0) coeflabels(log_exp= "Expenditure" hh_female= "HoH Female" hh_ed = "HoH Attanded School" hh_youth = "HoH Below 35 yrs" children = "Number of children" female = "Number of woman" owner = "Is the owner?" rural = "Rural" log_trade = "Distance to Market") xtitle("Estimated Coefficient")
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\category_drivers.png", as(png) name("Graph") replace
+
+coefplot Radio || Smart_Phone, bylabel("Feature Phone") || TV || DVD || Computer || Fridge || Laundry || Hotplate || Cooker, keep(log_exp hh_female hh_ed hh_youth children female owner rural log_trade) xline(0) coeflabels(log_exp= "Expenditure" hh_female= "HoH Female" hh_ed = "HoH Attanded School" hh_youth = "HoH Below 35 yrs" children = "Number of children" female = "Number of woman" owner = "Is the owner?" rural = "Rural" log_trade = "Distance to Market")xtitle("Estimated Coefficient")
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\appliances_drivers.png", as(png) name("Graph") replace
+
+********** Export Output
+outreg2 [Any_Communication Radio Analogue_Phone Smart_Phone] using communication, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. These are clustered at the district level.) addtext(District FE, Yes)
+
+outreg2 [Any_Entretainment TV Decoder DVD Satellite_Dish Camera Music] using entertainment, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. These are clustered at the district level.) addtext(District FE, Yes)
+
+outreg2 [Any_Productivity Computer Printer Sewing] using productivity, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. These are clustered at the district level.) addtext(District FE, Yes)
+
+outreg2 [Any_Convenience Hotplate Cooker Laundry Filter Fan Fridge] using covenience, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. These are clustered at the district level.) addtext(District FE, Yes)
+
+************************************************************************************************** Quantity: Quantity of Key Appliances
+***********************************************************************************************
+
+********* Radio
+xtpoisson radio saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if radio > 0, fe vce(robust) 
+estimates store radio_poisson
+
+xtpoisson radio saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if radio > 0, fe vce(robust) irr	
+estimates store radio_poisson_irr
+
+* Bootstrapped Standard  Errors
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson radio saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if radio > 0, fe 
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi_radio = poisson_boot[_n,1],det
+
+********* Analogue Phone
+xtpoisson analogue saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if analogue > 0, fe vce(robust) 
+estimates store analogue_poisson
+
+xtpoisson analogue saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if analogue > 0, fe vce(robust) irr	
+estimates store analogue_poisson_irr
+
+* Bootstrapped Standard  Errors
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson analogue saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if analogue > 0, fe 
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi_analogue = poisson_boot[_n,1]
+
+********* Smart/Feature Phone
+xtpoisson smart saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if smart > 0, fe vce(robust) 
+estimates store smart_poisson
+
+xtpoisson smart saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if smart > 0, fe vce(robust) irr	
+estimates store smart_poisson_irr
+
+* Bootstrapped Standard  Errors
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson smart saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if smart > 0, fe 
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi_smart = poisson_boot[_n,1]
+
+********* Computer
+xtpoisson computer saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if computer > 0, fe vce(robust) 
+estimates store computer_poisson
+
+xtpoisson computer saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if computer > 0, fe vce(robust) irr	
+estimates store computer_poisson_irr
+
+* Bootstrapped Standard  Errors
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson computer saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if computer > 0, fe 
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi_smart = poisson_boot[_n,1]
+
+********* Camera
+xtpoisson printer saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if printer > 0, fe vce(robust) 
+estimates store sewing_poisson
+
+xtpoisson sewing saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if sewing > 0, fe vce(robust) irr	
+estimates store sewing_poisson_irr
+
+* Bootstrapped Standard  Errors
+
+mat poisson_boot = J(500,1,.)
+
+forval i = 1/500{
+
+use data_appliances, clear
+bsample 1000
+
+drop e_saifi
+qui xtreg saifi lightning_radiance lightning_number log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe
+predict e_saifi, e
+
+qui xtpoisson sewing saifi log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi e_saifi if sewing > 0, fe 
+mat poisson_boot[`i', 1] = _b[saifi]
+
+}
+ 
+gen b_saifi_sewing = poisson_boot[_n,1]
+
+********* Export Models
+outreg2 [cat_1_poisson cat_2_poisson cat_3_poisson cat_4_poisson] using quantities, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. For linear model without fixed effects clustered standard errors at the district level are reported. Total number of appliances include radios, phones, TV, decoder, satellite dishes, cookers, fridges, dvds, music systems, computers and printers, cameras, hotplates, electric fans, laundry machines, water filters and sewing machines) addtext(Province FE, Yes)
+
+
+************************************************************************************************** Appliances Linear: Heterogeneity
+***********************************************************************************************
+
+* Income Limits
+egen mean_exp = mean(log_exp)
+egen median_exp = median(log_exp)
+
+* Define Categories
+gen low_exp = 0
+replace low_exp = 1 if log_exp <  median_exp
+
+gen high_exp = 0
+replace high_exp = 1 if log_exp >=  median_exp
+
+* Define Saifi for Categories
+gen saifi_low = low_exp * saifi
+gen saifi_high = high_exp * saifi 
+
+gen radiance_high = lightning_radiance * (1-low_exp) 
+gen radiance_low = lightning_radiance * low_exp
+gen ligntning_high = lightning_number * (1-low_exp)
+gen ligntning_low = lightning_number * low_exp
+
+* Radio
+xtivreg2 radio_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Radio
+
+* Analogu Phone
+xtivreg2 analogue_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Analogue_Phone
+
+* Smart/Feature Phone
+xtivreg2 smart_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Smart_Phone
+
+* TV
+xtivreg2 tv_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store TV
+
+* DVD
+xtivreg2 dvd_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store DVD
+
+* Decoder
+xtivreg2 decoder_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Decoder
+
+* Satellite Dish
+xtivreg2 satellite_dish_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Satellite_Dish
+
+* Music
+xtivreg2 music_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Music
+
+* Camera
+xtivreg2 camera_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Camera
+
+* Computer
+xtivreg2 computer_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Computer
+
+* Printer
+xtivreg2 printer_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Printer
+
+* Sewing Machine
+xtivreg2 sewing_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Sewing
+
+* Hotplate
+xtivreg2 hotplate_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Hotplate
+
+* Cooker
+xtivreg2 cooker_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Cooker
+
+* Fridge
+xtivreg2 fridge_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Fridge
+
+* Laundry
+xtivreg2 laundry_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Laundry
+
+* Filter
+xtivreg2 filter_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Filter
+
+* Fan
+xtivreg2 fan_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Fan
+
+* Power Stabilizer
+xtivreg2 power_stabilizer_y (saifi_low saifi_high = radiance_low radiance_high ligntning_low ligntning_high) log_exp savings business high_skill job_instability female children senior hh_female hh_rwandese hh_ed hh_youth num_rooms multi_hhs multi_house owner num_years_in_dwelling rural log_trade log_town rainfall_mean caidi, fe cluster(district)
+estimates store Power_stabilizer
+
+*** Plots
+
+coefplot (Smart_Phone, label("Smart Phone")) TV Decoder Music Sewing Fridge Cooker Filter Fan (Power_stabilizer, label("Power Stabilizer")) , vert keep(saifi_low saifi_high) ylab(, format(%9.2f)) yline(0) coeflabels(saifi_low = "Low Income" saifi_high= "High Income") ytitle("Estimated Coefficient") xline(1.5) legend(rows(2) pos(6)) 
+
+graph export "C:\Users\gg2718\OneDrive - SIPA, Columbia University\Desktop\Reliability\regression_income.png", as(png) name("Graph") replace
+
+outreg2 [Smart_Phone TV Decoder Music Sewing Fridge Cooker Filter Fan Power_stabilizer] using income, tex replace label dec(3) addnote(Note: Standard errors in parenthesis. These are clustered at the district level.) addtext(District FE, Yes)
